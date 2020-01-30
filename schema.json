@@ -13,16 +13,24 @@
         "index": 0
       }
     },
-    "logo": {
-      "type": "string",
-      "description": "App logo",
-      "x-prompt": "What is the logo url for the header menu?",
-      "default": "https://angular.io/assets/images/logos/angular/logo-nav@2x.png",
+    "appShell": {
+      "type": "boolean",
+      "description": "App Shell Implement",
+      "x-prompt": "Do you want to install a App-Shell feature?",
       "$default": {
         "$source": "argv",
         "index": 1
       }
+    },
+    "webPush": {
+      "type": "boolean",
+      "description": "WebPush Implement",
+      "x-prompt": "Do you want to install a WebPush feature?",
+      "$default": {
+        "$source": "argv",
+        "index": 2
+      }
     }
   },
-  "required": ["project", "logo"]
+  "required": ["project", "appShell", "webPush"]
 }

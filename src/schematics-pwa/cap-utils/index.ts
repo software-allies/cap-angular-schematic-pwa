@@ -1,6 +1,11 @@
-import {SchematicsException, Tree, UpdateRecorder} from '@angular-devkit/schematics';
-import {getChildElementIndentation} from '@angular/cdk/schematics/utils/parse5-element';
-import {DefaultTreeDocument, DefaultTreeElement, parse as parseHtml} from 'parse5';
+import { SchematicsException, Tree, UpdateRecorder } from '@angular-devkit/schematics';
+import { getChildElementIndentation } from '@angular/cdk/schematics/utils/parse5-element';
+import { DefaultTreeDocument, DefaultTreeElement, parse as parseHtml } from 'parse5';
+import { getWorkspace } from '@schematics/angular/utility/config';
+import { getFileContent } from '@schematics/angular/utility/test';
+import { NodeDependency } from '@schematics/angular/utility/dependencies';
+
+
 
 
 /** Appends fragment the specified file. */
@@ -119,4 +124,44 @@ function getElementByTagName(tagName: string, htmlContent: string): DefaultTreeE
   }
 
   return null;
+}
+
+export function fileExist(host: Tree, path: string): boolean {
+  const text = host.read(path);
+  if (text === null) {
+    return false;
+  }
+  return true;
+}
+
+export function hasUniversalBuild(tree: Tree, options: any): boolean {
+		let hasUniversalBuild = false;
+		const workspace = getWorkspace(tree);
+		const architect = workspace.projects[options.clientProject].architect;
+		if (architect) {
+			for (let builder in architect) {
+				if (architect[builder].builder === '@angular-devkit/build-angular:server') {
+					hasUniversalBuild = true;
+				}
+			}
+		}
+		return hasUniversalBuild;
+}
+
+
+/***
+ * NodeDependency example
+ * type: NodeDependencyType.Default,
+ * name: '@nguniversal/common',
+ * version: '8.1.0'
+*/
+export function addDependencyToPackageJson(tree: Tree, options: any, dependency: NodeDependency): void {
+    const packageJsonSource = JSON.parse(getFileContent(tree, `${options.directory}/package.json`));
+    packageJsonSource[dependency.type][dependency.name] = dependency.version;
+    tree.overwrite(`${options.directory}/package.json`, JSON.stringify(packageJsonSource, null, 2));
+}
+
+export function getSourceRoot(tree: Tree, options: any): string {
+	const workspace = getWorkspace(tree);
+	return `/${workspace.projects[options.clientProject].sourceRoot}`;
 }

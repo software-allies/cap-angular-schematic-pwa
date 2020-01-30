@@ -1,228 +1,268 @@
-import { strings } from '@angular-devkit/core';
 import { 
-  apply,
-  template,
   branchAndMerge,
   chain,
-  forEach,
-  FileEntry,
-  mergeWith,
-  move,
   Rule,
   SchematicsException,
   Tree,
-  url
+  noop,
+  externalSchematic
  } from '@angular-devkit/schematics';
 import { FileSystemSchematicContext } from '@angular-devkit/schematics/tools';
-import { InsertChange } from '@schematics/angular/utility/change';
 import { getWorkspace } from '@schematics/angular/utility/config';
-import {
-  buildRelativePath, 
-  findModule, 
-  MODULE_EXT, 
-  ROUTING_MODULE_EXT
-} from '@schematics/angular/utility/find-module';
-import { parseName } from '@schematics/angular/utility/parse-name';
-import { buildDefaultPath } from '@schematics/angular/utility/project';
 import { getProjectFromWorkspace } from '@angular/cdk/schematics/utils/get-project';
-import { appendHtmlElementToHead } from '@angular/cdk/schematics/utils/html-head-element';import { 
-  addDeclarationToModule,
-  addProviderToModule
- } from './vendored-ast-utils';
 import { 
-  appendHtmlElementToBody, 
-  appendToStartFile 
+  fileExist,
+  hasUniversalBuild,
+  addDependencyToPackageJson
 } from './cap-utils';
-import { Schema as ComponentOptions } from './schema';
-import * as ts from 'typescript';
+import { Schema as PWAOptions } from './schema';
+import { NodeDependencyType } from '@schematics/angular/utility/dependencies';
 
 
 
-function updateIndexFile(path: string): Rule {
-  return (host: Tree) => {
-    /** Appends the given element HTML fragment to the `<head>` element of the specified HTML file. */
-    [
-      '<link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500&display=optional" rel="stylesheet" async defer>',
-      '<link href="https://fonts.googleapis.com/css?family=Open+Sans:300,300i,400,400i,600,600i,700,700i,800,800i&display=optional" rel="stylesheet" async defer>', 
-      '<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" async defer>',
-      '<link rel="stylesheet" href="assets/css/bootstrap.min.css" async defer>',
-      '<script src="assets/js/jquery-latest.min.js" async defer></script>',
-    ].map((element: string) => {
-      appendHtmlElementToHead(host, path, element);
-    });
 
-    /** Appends the given element HTML fragment to the `<body>` element of the specified HTML file after open tag. */
-    appendHtmlElementToBody(host, path, '<div class="container-fluid p-0">', 'left');
 
-    /** Appends the given element HTML fragment to the `<body>` element of the specified HTML file before close tag. */
-    appendHtmlElementToBody(host, path, '</div>', 'right');
-    return host;
-  };
-}
+function applyWebPushOnFront(options: PWAOptions): Rule {
+  return (tree: Tree) => {
 
-function appendToAppComponentFile(path: string): Rule {
-  return (host: Tree) => {
-    const content = `<app-header></app-header>`;
-    appendToStartFile(host, path, content);
-    return host;
-  };
-}
+    // On construction...
 
-function appendToStylesFile(path: string): Rule {
-  return (host: Tree) => {
-    const content = `
-      // Webslidemenu imports
-      @import "./assets/webslidemenu/dropdown-effects/fade-down.css";
-      @import "./assets/webslidemenu/webslidemenu.css";
+    // On AppComponent
+    const addToAppComponentTs = 
+    `
+    import { SwUpdate } from "@angular/service-worker";
+    import { PushService } from "./shared/services/push.service";
+    import { SwPush } from "@angular/service-worker";
 
-      body {
-        background-color: #333333;
-        color: #f2f2f2;
-      }
+    [...]
 
-      app-header {
-        height: 103px;
-        display: block;
-        @media (min-width: 1200px) {}
-        @media (min-width: 992px) and (max-width: 1199px) {}
-        @media (min-width: 576px) and (max-width: 991px) {
-          height: 54px;
+    sub: PushSubscription;
+
+    readonly VAPID_PUBLIC_KEY = "BLnVk1MBGFBW4UxL44fuoM2xxQ4o9CuxocVzKn9UVmnXZEyPCTEFjI4sALMB8qN5ee67yZ6MeQWjd5iyS8lINAg";
+
+    constructor(
+        private swUpdate: SwUpdate,
+        private swPush: SwPush,
+        private pushService: PushService) {
+    }
+
+    ngOnInit() {
+        if (this.swUpdate.isEnabled) {
+            this.swUpdate.available.subscribe(() => {
+                if (confirm("New version available. Load New Version?")) {
+                    window.location.reload();
+                }
+            });
         }
-        @media (max-width: 575px) {
-          height: 54px;
-        }
-      }
+    }
 
-      router-outlet {
-        padding-bottom: 80px;
-      }
+    subscribeToNotifications() {
+        this.swPush.requestSubscription({
+            serverPublicKey: this.VAPID_PUBLIC_KEY
+        })
+        .then(sub => {
+            this.sub = sub;
+            console.log("Notification Subscription: ", sub);
+            this.pushService.addPushSubscriber(sub)
+                .subscribe(
+                    () => console.log('Sent push subscription object to server.'),
+                    err =>  console.log('Could not send subscription object to server, reason: ', err)
+                );
+        })
+        .catch(err => console.error("Could not subscribe to notifications", err));
+    }
+
+    sendNewsletter() {
+        console.log("Sending Newsletter to all Subscribers ...");
+        this.pushService.send().subscribe();
+    } 
     `;
-    appendToStartFile(host, path, content);
-    return host;
-  };
-}
 
-function readIntoSourceFile(host: Tree, modulePath: string) {
-  const text = host.read(modulePath);
-  if (text === null) {
-    throw new SchematicsException(`File ${modulePath} does not exist.`);
-  }
-  return ts.createSourceFile(modulePath, text.toString('utf-8'), ts.ScriptTarget.Latest, true);
-}
-
-function addDeclarationToNgModule(options: ComponentOptions): Rule {
-  return (host: Tree) => {
     
-    const modulePath = options.module;
-    // Import Header Component and declare
-    let source = readIntoSourceFile(host, modulePath);
-    const componentPath = `${options.path}/app/header/header.component`;
-    const relativePath = buildRelativePath(modulePath, componentPath);
-    const classifiedName = strings.classify(`HeaderComponent`);
-    const declarationChanges: any = addDeclarationToModule(
-      source,
-      modulePath,
-      classifiedName,
-      relativePath);
+    // On AppComponent html
+    const addToAppComponentHtml = 
+    `
+            <button class="button button-primary" (click)="subscribeToNotifications()" [disabled]="sub">Subscribe</button>
+            <button class="button button-danger" (click)="sendNewsletter()">Send</button>
+    `;
 
-    const declarationRecorder = host.beginUpdate(modulePath);
-    for (const change of declarationChanges) {
-      if (change instanceof InsertChange) {
-        declarationRecorder.insertLeft(change.pos, change.toAdd);
-      }
-    }
-    host.commitUpdate(declarationRecorder);
-
-    // Import and include on Providers the load script ScriptService
-    if (options) {
-        // Need to refresh the AST because we overwrote the file in the host.
-        source = readIntoSourceFile(host, modulePath);
-        const servicePath = `${options.path}/app/shared/services/load-scripts.service`;
-        const relativePath = buildRelativePath(modulePath, servicePath);
-        const classifiedName = strings.classify(`ScriptService`);
-        const providerRecorder = host.beginUpdate(modulePath);
-        const providerChanges: any = addProviderToModule(
-            source,
-            modulePath,
-            classifiedName,
-            relativePath);
-
-        for (const change of providerChanges) {
-            if (change instanceof InsertChange) {
-                providerRecorder.insertLeft(change.pos, change.toAdd);
-            }
-        }
-        host.commitUpdate(providerRecorder);
-    }
-    return host;
-  };
+    console.log(addToAppComponentTs);
+    console.log(addToAppComponentHtml);
+    console.log(tree);
+    console.log(options);
+  }
 }
 
-export function schematicsPWA(options: ComponentOptions): Rule {
-  return (host: Tree, context: FileSystemSchematicContext) => {
+function applyWebPushOnServer(options: PWAOptions): Rule {
+    return (tree: Tree) => {
 
+      // Add to configuration and api routes on server.js
+      const addToServer = 
+      `
+      const webpush = require('web-push');
+
+      export let USER_SUBSCRIPTIONS = [];
+
+      export function addPushSubscriber(req, res) {
+          const sub = req.body;
+          console.log('Received Subscription on the server: ', sub);
+          USER_SUBSCRIPTIONS.push(sub);
+          res.status(200)
+              .json({ message: "Subscription added successfully." });
+      }
+
+      export function sendNewsletter(req, res) {
+
+          console.log('Total subscriptions', USER_SUBSCRIPTIONS.length);
+
+          // sample notification payload
+          const notificationPayload = {
+              "notification": {
+                  "title": "Angular News",
+                  "body": "Newsletter Available!",
+                  "icon": "assets/icons/icon-96x96.png",
+                  "vibrate": [100, 50, 100],
+                  "data": {
+                      "dateOfArrival": Date.now(),
+                      "primaryKey": 1
+                  },
+                  "actions": [{
+                      "action": "explore",
+                      "title": "Go to the site"
+                  }]
+              }
+          };
+
+          Promise.all(USER_SUBSCRIPTIONS.map(sub => webpush.sendNotification(
+              sub, JSON.stringify(notificationPayload) )))
+              .then(() => res.status(200).json({message: 'Newsletter sent successfully.'}))
+              .catch(err => {
+                  console.error("Error sending notification, reason: ", err);
+                  res.sendStatus(500);
+              });
+      }
+
+      const vapidKeys = {
+          "publicKey":"BLnVk1MBGFBW4UxL44fuoM2xxQ4o9CuxocVzKn9UVmnXZEyPCTEFjI4sALMB8qN5ee67yZ6MeQWjd5iyS8lINAg",
+          "privateKey":"mp5xYHWtRTyCA63nZMvmJ_qmYO6A1klSotcoppSx-MI"
+      };
+
+      webpush.setVapidDetails(
+          'mailto:example@yourdomain.org',
+          vapidKeys.publicKey,
+          vapidKeys.privateKey
+      );
+
+
+      [...]
+
+      // REST API
+      app.route('/api/notifications')
+          .post(addPushSubscriber);
+
+      app.route('/api/newsletter')
+          .post(sendNewsletter);
+
+      `;
+
+      if (addToServer) {
+        console.log('...');
+      }
+
+
+      // add web-push dependency to package.json
+      addDependencyToPackageJson(tree, options, {
+          type: NodeDependencyType.Default,
+          name: 'web-push',
+          version: '^3.2.5'
+      });
+
+    }
+}
+
+function applyAppShell(options: PWAOptions): Rule {
+	return (tree: Tree) => {
+		let hasPWABuild = false;
+		const workspace = getWorkspace(tree);
+		const architect = workspace.projects[options.clientProject].architect;
+    // Check if exist a app-shell installation
+		if (architect) {
+			for (let builder in architect) {
+				if (architect[builder].builder === '@angular-devkit/build-angular:app-shell') {
+					hasPWABuild = true;
+				}
+			}
+		}
+		if (!hasPWABuild) {
+      // Check if is Universal installed
+      if (hasUniversalBuild(tree, options)) {
+        const appShellOptions = {
+          clientProject: options.clientProject,
+          universalProject: options.clientProject + '-universal',
+        };
+        // TODO search how run a ng generate command...
+        // 'ng', ['generate', '@schematics/angular:appShell', '--clientProject', this.answers.appname, '--universalProject', this.answers.appname + '-universal']
+        return externalSchematic('@schematics/angular', 'appShell', appShellOptions);
+      } else {
+        console.log(`For App-Shell feature is necessary to be installed Angular Universal.`);
+			  return noop();
+      }
+		} else {
+      console.log(`A App Shell installation exist.`);
+			return noop();
+		}
+	}
+}
+
+function applyPWA(options: PWAOptions): Rule {
+	return (tree: Tree) => {
+    const swPath = '/ngsw-config.json';
+		let hasPWABuild = fileExist(tree, swPath);
+		if (!hasPWABuild) {
+      // If a ngsw-config file don't exist continue installation of pwa schematic
+      const pwaOptions = {
+        clientProject: options.clientProject 
+      };
+			return externalSchematic('@angular/pwa', 'ng-add', pwaOptions);
+		} else {
+      console.log(`A Service Worker Config file installation exist. Don't continue with the installation.`);
+			return noop();
+		}
+	}
+}
+
+function applyPackageJsonScripts() {
+	return (tree: Tree) => {
+		const pkgPath = `/package.json`;
+		const buffer = tree.read(pkgPath);
+		if (buffer === null) {
+			throw new SchematicsException('Could not find package.json');
+		}
+		const pkg = JSON.parse(buffer.toString());
+    pkg.scripts['start-pwa'] = 'npm run build:app-shell && npm run serve:ssr';
+    pkg.scripts['app-shell'] = 'ng run <%=project%>:app-shell ';
+    pkg.scripts['build:app-shell'] = 'npm run build:client-and-server-bundles:app-shell && npm run webpack:server';
+    pkg.scripts['build:client-and-server-bundles:app-shell'] = 'ng build --prod --build-optimizer && npm run fix-memory-limit && ng run <%=project%>:app-shell:production';
+		tree.overwrite(pkgPath, JSON.stringify(pkg, null, 2));
+		return tree;
+	}
+}
+
+export function schematicsPWA(options: PWAOptions): Rule {
+  return (host: Tree, context: FileSystemSchematicContext) => {
     const workspace = getWorkspace(host);
     const project = getProjectFromWorkspace(workspace, options.project);
     if (!project) {
       throw new SchematicsException(`Project is not defined in this workspace.`);
     }
-
-    if (options.path === undefined) {
-      options.path = buildDefaultPath(project);
-    }
-    options.module = findModule(host, options.path, 'app' + MODULE_EXT, ROUTING_MODULE_EXT);
-    options.name = '';
-    const parsedPath = parseName(options.path!, options.name);
-    options.name = parsedPath.name;
-    options.path = parsedPath.path;
-
-    // Get Index
-    if (!options.project) {
-      throw new SchematicsException('Option "project" is required.');
-    }
-
-    const projectType: string = project.projectType || project.projects[options.project].projectType;
-    if (projectType !== 'application') {
-      throw new SchematicsException(`Is required a project type of "application".`);
-    }
-
-    // Get the index path
-    const index = project.architect.build.options.index || `src/index.html`;
-    // Get the styles.scss file 
-    const styles = `src/styles.scss`;
-    // Get the app.component file
-    const appComponent = `src/app/app.component.html`;
-
-    const files: any = {
-      index: index,
-      styles: styles,
-      appComponent: appComponent
-    }
-
-    // Object that will be used as context for the EJS templates.
-    const baseTemplateContext = {
-      ...strings,
-      ...options,
-    };
-
-    const templateSource = apply(url('./files'), [
-      template(baseTemplateContext),
-      move(null as any, parsedPath.path),
-      forEach((fileEntry: FileEntry) => {
-        if (host.exists(fileEntry.path)) {
-          host.overwrite(fileEntry.path, fileEntry.content);
-        }
-        return fileEntry;
-      })
-    ]);
-
+    options.clientProject = options.project;
     return chain([
       branchAndMerge(chain([
-        addDeclarationToNgModule(options),
-        mergeWith(templateSource),
-        updateIndexFile(files.index),
-        appendToStylesFile(files.styles),
-        appendToAppComponentFile(files.appComponent),
+        applyPWA(options),
+        (options.appShell) ?  applyAppShell(options) : noop(),
+        (options.appShell) ?  applyPackageJsonScripts() : noop(),
+        (options.webPush) ?  applyWebPushOnServer(options) : noop(),
+        (options.webPush) ?  applyWebPushOnFront(options) : noop(),
       ])),
     ])(host, context);
   };

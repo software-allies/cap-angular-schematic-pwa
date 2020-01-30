@@ -1,8 +1,12 @@
 export interface Schema {
-    project: string
-    logo: string;
+    project: string;
+    clientProject: string;
+    appShell: string;
+    webPush: string;
     name?: string;
-    title?: string;
     path?: string;
     module?: any;
+    hasUniversalBuild?: boolean;
+    server_domain?: string;
+    server_port?: string;
 }
