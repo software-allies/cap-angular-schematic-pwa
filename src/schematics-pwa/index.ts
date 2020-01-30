@@ -158,7 +158,7 @@ function addDeclarationToNgModule(options: ComponentOptions): Rule {
   };
 }
 
-export function schematicsResponsiveMenu(options: ComponentOptions): Rule {
+export function schematicsPWA(options: ComponentOptions): Rule {
   return (host: Tree, context: FileSystemSchematicContext) => {
 
     const workspace = getWorkspace(host);

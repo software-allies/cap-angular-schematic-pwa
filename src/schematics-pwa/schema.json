@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/schema",
-  "id": "SchematicsResponsiveMenu",
-  "title": "CAP Schematics Responsive Menu",
+  "id": "SchematicsPWA",
+  "title": "CAP Schematics PWA",
   "type": "object",
   "properties": {
     "project": {
