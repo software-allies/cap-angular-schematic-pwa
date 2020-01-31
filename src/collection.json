@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@angular-devkit/schematics/collection-schema.json",
   "schematics": {
     "schematics-pwa": {
-      "description": "A PWA Schematic",
+      "description": "A CAP Angular PWA Schematic",
       "factory": "./schematics-pwa/index#schematicsPWA",
       "schema": "./schematics-pwa/schema.json"
     },
