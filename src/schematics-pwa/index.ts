@@ -2,17 +2,11 @@ import { InsertChange } from '@schematics/angular/utility/change';
 import { parseName } from '@schematics/angular/utility/parse-name';
 import { buildDefaultPath } from '@schematics/angular/utility/project';
 import { getFileContent } from '@schematics/angular/utility/test';
+import { NodeDependencyType } from '@schematics/angular/utility/dependencies';
 import { strings } from '@angular-devkit/core';
 import { 
-  // apply,
-  // template,
-  // forEach,
-  // FileEntry,
-  // mergeWith,
-  // move,
   chain,
   branchAndMerge,
-  // url,
   Rule,
   SchematicsException,
   Tree,
@@ -25,31 +19,26 @@ import {
   MODULE_EXT, 
   ROUTING_MODULE_EXT
 } from '@schematics/angular/utility/find-module';
-import { FileSystemSchematicContext } from '@angular-devkit/schematics/tools';
 import { getWorkspace } from '@schematics/angular/utility/config';
+import { FileSystemSchematicContext } from '@angular-devkit/schematics/tools';
 import { getProjectFromWorkspace } from '@angular/cdk/schematics/utils/get-project';
 import { 
   fileExist,
-  // hasUniversalBuild,
+  hasUniversalBuild,
   addDependencyToPackageJson,
   getSourceRoot,
   appendHtmlElementToTag,
   createOrOverwriteFile,
   readIntoSourceFile
-
 } from './cap-utils';
-import { Schema as PWAOptions } from './schema';
-import { NodeDependencyType } from '@schematics/angular/utility/dependencies';
 import {
   addProviderToModule
  } from './vendored-ast-utils';
-import { Schema } from './schema';
-// import { PushService } from './files/src/app/shared/services/push.service';
+import { Schema as PWAOptions } from './schema';
 
 
 
-
-function createPushService(tree: Tree, options: any) {
+function createPushService(tree: Tree, options: PWAOptions) {
 
   const pushServiceContent = 
   `
@@ -90,14 +79,14 @@ export class PushService {
     createOrOverwriteFile(tree, appServicePath, pushServiceContent);
 }
 
-function createAppComponent(tree: Tree, options: any) {
+function createAppComponent(tree: Tree, options: PWAOptions) {
 
   const appComponentContent = 
   `
 import { Component } from '@angular/core';
 import { SwUpdate } from "@angular/service-worker";
 import { PushService } from "./shared/services/push.service";
-import { SwPush, PushSubscription } from "@angular/service-worker";
+import { SwPush } from "@angular/service-worker";
 
 
 @Component({
@@ -107,7 +96,7 @@ import { SwPush, PushSubscription } from "@angular/service-worker";
 })
 export class AppComponent {
 
-    sub: PushSubscription;
+    sub: any;
 
     readonly VAPID_PUBLIC_KEY = "BLnVk1MBGFBW4UxL44fuoM2xxQ4o9CuxocVzKn9UVmnXZEyPCTEFjI4sALMB8qN5ee67yZ6MeQWjd5iyS8lINAg";
 
@@ -155,7 +144,7 @@ export class AppComponent {
     createOrOverwriteFile(tree, appComponentPath, appComponentContent);
 }
 
-function addDeclarationToNgModule(options: Schema): Rule {
+function addDeclarationToNgModule(options: PWAOptions): Rule {
   return (host: Tree) => {
     const modulePath = options.module;
 
@@ -191,8 +180,10 @@ function applyWebPushOnFront(options: PWAOptions): Rule {
     // On AppComponent html
     const addToAppComponentHtml = 
     `
-            <button class="button button-primary" (click)="subscribeToNotifications()" [disabled]="sub">Subscribe</button>
-            <button class="button button-danger" (click)="sendNewsletter()">Send</button>
+<div>
+    <button class="button button-primary" (click)="subscribeToNotifications()" [disabled]="sub">Subscribe</button>
+    <button class="button button-danger" (click)="sendNewsletter()">Send</button>
+</div>
     `;
 
     const appComponentHtmlPath = getSourceRoot(tree, options) + '/app/app.component.html';
@@ -201,7 +192,7 @@ function applyWebPushOnFront(options: PWAOptions): Rule {
   }
 }
 
-function applyWebPushOnServer(options: PWAOptions): Rule {
+function applyWebPushOnServer(): Rule {
     return (tree: Tree) => {
 
       // Add to configuration and api routes on server.js
@@ -271,26 +262,26 @@ app.route('/api/newsletter')
 
       `;
 
-      const appComponentPath = '/source.js';
-      const appComponent = getFileContent(tree, appComponentPath);
-		  createOrOverwriteFile(tree, appComponentPath, appComponent.replace(`const app = express();`, `const app = express();` + addToServer));
+        const appComponentPath = '/server.ts' || '/server.js';
+        const appComponent = getFileContent(tree, appComponentPath);
+        createOrOverwriteFile(tree, appComponentPath, appComponent.replace(`const app = express();`, `const app = express();` + addToServer));
 
-      // add web-push dependency to package.json
-      addDependencyToPackageJson(tree, options, {
-          type: NodeDependencyType.Default,
-          name: 'web-push',
-          version: '^3.2.5'
-      });
+        // add web-push dependency to package.json
+        addDependencyToPackageJson(tree, {
+            type: NodeDependencyType.Default,
+            name: 'web-push',
+            version: '^3.2.5'
+        });
 
     }
 }
 
-/*function applyAppShell(options: PWAOptions): Rule {
+function applyAppShell(options: PWAOptions): Rule {
 	return (tree: Tree) => {
 		let hasPWABuild = false;
 		const workspace = getWorkspace(tree);
 		const architect = workspace.projects[options.clientProject].architect;
-    // Check if exist a app-shell installation
+        // Check if exist a app-shell installation
 		if (architect) {
 			for (let builder in architect) {
 				if (architect[builder].builder === '@angular-devkit/build-angular:app-shell') {
@@ -302,41 +293,41 @@ app.route('/api/newsletter')
       // Check if is Universal installed
       if (hasUniversalBuild(tree, options)) {
         const appShellOptions = {
-          clientProject: options.clientProject,
-          universalProject: options.clientProject + '-universal',
+            clientProject: options.clientProject,
+            universalProject: options.clientProject + '-universal',
         };
         // TODO search how run a ng generate command...
         // 'ng', ['generate', '@schematics/angular:appShell', '--clientProject', this.answers.appname, '--universalProject', this.answers.appname + '-universal']
         return externalSchematic('@schematics/angular', 'appShell', appShellOptions);
       } else {
-        console.log(`For App-Shell feature is necessary to be installed Angular Universal.`);
-			  return noop();
+            console.log(`For App-Shell feature is necessary to be installed Angular Universal.`);
+			return noop();
       }
 		} else {
-      console.log(`A App Shell installation exist.`);
-			return noop();
-		}
-	}
-}*/
-
-function applyPWA(options: PWAOptions): Rule {
-	return (tree: Tree) => {
-    const swPath = '/ngsw-config.json';
-		let hasPWABuild = fileExist(tree, swPath);
-		if (!hasPWABuild) {
-      // If a ngsw-config file don't exist continue installation of pwa schematic
-      const pwaOptions = {
-        clientProject: options.clientProject 
-      };
-			return externalSchematic('@angular/pwa', 'ng-add', pwaOptions);
-		} else {
-      console.log(`A Service Worker Config file installation exist. Don't continue with the installation.`);
+            console.log(`A App Shell installation exist.`);
 			return noop();
 		}
 	}
 }
 
-function applyPackageJsonScripts() {
+function applyPWA(options: PWAOptions): Rule {
+	return (tree: Tree) => {
+        const swPath = '/ngsw-config.json';
+        let hasPWABuild = fileExist(tree, swPath);
+        if (!hasPWABuild) {
+            // If a ngsw-config file don't exist continue installation of pwa schematic
+            const pwaOptions = {
+                clientProject: options.clientProject 
+            };
+            return externalSchematic('@angular/pwa', 'ng-add', pwaOptions);
+        } else {
+            console.log(`A Service Worker Config file installation exist. Don't continue with the installation.`);
+            return noop();
+        }
+	}
+}
+
+function applyPackageJsonScripts(options: PWAOptions) {
 	return (tree: Tree) => {
 		const pkgPath = `/package.json`;
 		const buffer = tree.read(pkgPath);
@@ -344,10 +335,10 @@ function applyPackageJsonScripts() {
 			throw new SchematicsException('Could not find package.json');
 		}
 		const pkg = JSON.parse(buffer.toString());
-    pkg.scripts['start-pwa'] = 'npm run build:app-shell && npm run serve:ssr';
-    pkg.scripts['app-shell'] = 'ng run <%=project%>:app-shell ';
-    pkg.scripts['build:app-shell'] = 'npm run build:client-and-server-bundles:app-shell && npm run webpack:server';
-    pkg.scripts['build:client-and-server-bundles:app-shell'] = 'ng build --prod --build-optimizer && npm run fix-memory-limit && ng run <%=project%>:app-shell:production';
+        pkg.scripts['start-pwa'] = `npm run build:app-shell && npm run serve:ssr`;
+        pkg.scripts['app-shell'] = `ng run ${options.project}:app-shell `;
+        pkg.scripts['build:app-shell'] = `npm run build:client-and-server-bundles:app-shell && npm run webpack:server`;
+        pkg.scripts['build:client-and-server-bundles:app-shell'] = `ng build --prod --build-optimizer && npm run fix-memory-limit && ng run ${options.project}:app-shell:production`;
 		tree.overwrite(pkgPath, JSON.stringify(pkg, null, 2));
 		return tree;
 	}
@@ -372,32 +363,14 @@ export function schematicsPWA(options: PWAOptions): Rule {
     options.name = parsedPath.name;
     options.path = parsedPath.path;
 
-    /*// Object that will be used as context for the EJS templates.
-    const baseTemplateContext = {
-      ...strings,
-      ...options,
-    };
-
-    const templateSource = apply(url('./files'), [
-      template(baseTemplateContext),
-      move(null as any, parsedPath.path),
-      forEach((fileEntry: FileEntry) => {
-        if (host.exists(fileEntry.path)) {
-          host.overwrite(fileEntry.path, fileEntry.content);
-        }
-        return fileEntry;
-      })
-    ]);*/
-
     return chain([
       branchAndMerge(chain([
         applyPWA(options),
-        // (options.appShell) ?  applyAppShell(options) : noop(),
-        (options.appShell) ?  applyPackageJsonScripts() : noop(),
-        (options.webPush) ?  applyWebPushOnServer(options) : noop(),
-        (options.webPush) ?  applyWebPushOnFront(options) : noop(),
-        (options.webPush) ?  addDeclarationToNgModule(options) : noop(),
-        // (options.webPush) ?  mergeWith(templateSource) : noop()
+        (options.appShell) ? applyAppShell(options) : noop(),
+        (options.appShell) ? applyPackageJsonScripts(options) : noop(),
+        (options.webPush) ? applyWebPushOnServer() : noop(),
+        (options.webPush) ? applyWebPushOnFront(options) : noop(),
+        (options.webPush) ? addDeclarationToNgModule(options) : noop()
       ])),
     ])(host, context);
   };

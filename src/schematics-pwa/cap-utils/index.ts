@@ -179,10 +179,10 @@ export function hasUniversalBuild(tree: Tree, options: any): boolean {
  * name: '@nguniversal/common',
  * version: '8.1.0'
 */
-export function addDependencyToPackageJson(tree: Tree, options: any, dependency: NodeDependency): void {
-    const packageJsonSource = JSON.parse(getFileContent(tree, `${options.directory}/package.json`));
+export function addDependencyToPackageJson(tree: Tree, dependency: NodeDependency): void {
+    const packageJsonSource = JSON.parse(getFileContent(tree, `/package.json`));
     packageJsonSource[dependency.type][dependency.name] = dependency.version;
-    tree.overwrite(`${options.directory}/package.json`, JSON.stringify(packageJsonSource, null, 2));
+    tree.overwrite(`/package.json`, JSON.stringify(packageJsonSource, null, 2));
 }
 
 export function getSourceRoot(tree: Tree, options: any): string {
