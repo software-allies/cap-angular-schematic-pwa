@@ -12,7 +12,7 @@ import { getWorkspace } from '@schematics/angular/utility/config';
 import { getProjectFromWorkspace } from '@angular/cdk/schematics/utils/get-project';
 import { 
   fileExist,
-  hasUniversalBuild,
+  // hasUniversalBuild,
   addDependencyToPackageJson
 } from './cap-utils';
 import { Schema as PWAOptions } from './schema';
@@ -180,7 +180,7 @@ function applyWebPushOnServer(options: PWAOptions): Rule {
     }
 }
 
-function applyAppShell(options: PWAOptions): Rule {
+/*function applyAppShell(options: PWAOptions): Rule {
 	return (tree: Tree) => {
 		let hasPWABuild = false;
 		const workspace = getWorkspace(tree);
@@ -212,7 +212,7 @@ function applyAppShell(options: PWAOptions): Rule {
 			return noop();
 		}
 	}
-}
+}*/
 
 function applyPWA(options: PWAOptions): Rule {
 	return (tree: Tree) => {
@@ -259,7 +259,7 @@ export function schematicsPWA(options: PWAOptions): Rule {
     return chain([
       branchAndMerge(chain([
         applyPWA(options),
-        (options.appShell) ?  applyAppShell(options) : noop(),
+        // (options.appShell) ?  applyAppShell(options) : noop(),
         (options.appShell) ?  applyPackageJsonScripts() : noop(),
         (options.webPush) ?  applyWebPushOnServer(options) : noop(),
         (options.webPush) ?  applyWebPushOnFront(options) : noop(),
