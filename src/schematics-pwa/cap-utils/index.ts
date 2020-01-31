@@ -4,8 +4,18 @@ import { DefaultTreeDocument, DefaultTreeElement, parse as parseHtml } from 'par
 import { getWorkspace } from '@schematics/angular/utility/config';
 import { getFileContent } from '@schematics/angular/utility/test';
 import { NodeDependency } from '@schematics/angular/utility/dependencies';
+import * as ts from 'typescript';
 
 
+
+
+
+export function createOrOverwriteFile(tree: Tree, filePath: string, fileContent: string): void {
+    if (!tree.exists(filePath)) {
+        tree.create(filePath, '');
+    }
+    tree.overwrite(filePath, fileContent);
+}
 
 
 /** Appends fragment the specified file. */
@@ -25,6 +35,18 @@ export function appendToStartFile(host: Tree, filePath: string, styleRule: strin
         .insertRight(0, `${insertion}\n`);
     host.commitUpdate(recordedChange);
 }
+
+
+/** Appends the given element HTML fragment to the specified HTML file. */
+export function appendHtmlElementToTag(host: Tree, htmlFilePath: string, elementHtml: string, side: string = 'right') {
+  const htmlFileBuffer = host.read(htmlFilePath);
+  if (!htmlFileBuffer) {
+    throw new SchematicsException(`Could not read file for path: ${htmlFilePath}`);
+  }
+  const htmlContent = htmlFileBuffer.toString();
+  host.overwrite(`${htmlFilePath}`, (side === 'right') ? htmlContent + elementHtml : elementHtml + htmlContent);
+}
+
 
 /** Appends the given element HTML fragment to the `<body>` element of the specified HTML file. */
 export function appendHtmlElementToBody(host: Tree, htmlFilePath: string, elementHtml: string, side: string = 'right') {
@@ -67,6 +89,8 @@ export function appendHtmlElementToBody(host: Tree, htmlFilePath: string, elemen
         host.commitUpdate(recordedChange);
     }
 }
+
+
 
 /** Adds a class to the body of the document. */
 export function addBodyClass(host: Tree, htmlFilePath: string, className: string): void {
@@ -164,4 +188,12 @@ export function addDependencyToPackageJson(tree: Tree, options: any, dependency:
 export function getSourceRoot(tree: Tree, options: any): string {
 	const workspace = getWorkspace(tree);
 	return `/${workspace.projects[options.clientProject].sourceRoot}`;
+}
+
+export function readIntoSourceFile(host: Tree, modulePath: string) {
+  const text = host.read(modulePath);
+  if (text === null) {
+    throw new SchematicsException(`File ${modulePath} does not exist.`);
+  }
+  return ts.createSourceFile(modulePath, text.toString('utf-8'), ts.ScriptTarget.Latest, true);
 }
