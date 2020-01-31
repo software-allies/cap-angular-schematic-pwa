@@ -1,40 +1,110 @@
+import { InsertChange } from '@schematics/angular/utility/change';
+import { parseName } from '@schematics/angular/utility/parse-name';
+import { buildDefaultPath } from '@schematics/angular/utility/project';
+import { getFileContent } from '@schematics/angular/utility/test';
+import { strings } from '@angular-devkit/core';
 import { 
-  branchAndMerge,
+  // apply,
+  // template,
+  // forEach,
+  // FileEntry,
+  // mergeWith,
+  // move,
   chain,
+  branchAndMerge,
+  // url,
   Rule,
   SchematicsException,
   Tree,
   noop,
   externalSchematic
  } from '@angular-devkit/schematics';
+ import {
+  buildRelativePath, 
+  findModule, 
+  MODULE_EXT, 
+  ROUTING_MODULE_EXT
+} from '@schematics/angular/utility/find-module';
 import { FileSystemSchematicContext } from '@angular-devkit/schematics/tools';
 import { getWorkspace } from '@schematics/angular/utility/config';
 import { getProjectFromWorkspace } from '@angular/cdk/schematics/utils/get-project';
 import { 
   fileExist,
   hasUniversalBuild,
-  addDependencyToPackageJson
+  addDependencyToPackageJson,
+  getSourceRoot,
+  appendHtmlElementToTag,
+  createOrOverwriteFile,
+  readIntoSourceFile
 } from './cap-utils';
 import { Schema as PWAOptions } from './schema';
 import { NodeDependencyType } from '@schematics/angular/utility/dependencies';
+import {
+  addProviderToModule
+ } from './vendored-ast-utils';
+import { Schema } from './schema';
+// import { PushService } from './files/src/app/shared/services/push.service';
 
 
 
 
+function createPushService(tree: Tree, options: any) {
 
-function applyWebPushOnFront(options: PWAOptions): Rule {
-  return (tree: Tree) => {
+  const pushServiceContent = 
+  `
+import { Injectable } from "@angular/core";
+import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
 
-    // On construction...
 
-    // On AppComponent
-    const addToAppComponentTs = 
-    `
-    import { SwUpdate } from "@angular/service-worker";
-    import { PushService } from "./shared/services/push.service";
-    import { SwPush } from "@angular/service-worker";
+@Injectable({
+    "providedIn": "root"
+})
+export class PushService {
+    private actionUrl: string;
+    private httpOptions: any;
 
-    [...]
+    constructor(private http: HttpClient) {
+        this.httpOptions = {
+            headers: new HttpHeaders({ 
+                'Content-Type': 'application/json'
+            }),
+            observe: "response"
+        };
+
+        this.actionUrl = 'http://localhost:4000';
+    }
+
+    addPushSubscriber(sub:any) {
+        return this.http.post('http://localhost:4000/api/notifications', sub);
+    }
+
+    send() {
+        return this.http.post('http://localhost:4000/api/newsletter', null);
+    }
+}
+
+`;
+
+    const appServicePath = getSourceRoot(tree, options) + '/app/shared/services/push.service.ts';
+    createOrOverwriteFile(tree, appServicePath, pushServiceContent);
+}
+
+function createAppComponent(tree: Tree, options: any) {
+
+  const appComponentContent = 
+  `
+import { Component } from '@angular/core';
+import { SwUpdate } from "@angular/service-worker";
+import { PushService } from "./shared/services/push.service";
+import { SwPush, PushSubscription } from "@angular/service-worker";
+
+
+@Component({
+  selector: 'app-root',
+  templateUrl: './app.component.html',
+  styleUrls: ['./app.component.scss']
+})
+export class AppComponent {
 
     sub: PushSubscription;
 
@@ -76,9 +146,47 @@ function applyWebPushOnFront(options: PWAOptions): Rule {
         console.log("Sending Newsletter to all Subscribers ...");
         this.pushService.send().subscribe();
     } 
-    `;
+}
 
-    
+`;
+
+    const appComponentPath = getSourceRoot(tree, options) + '/app/app.component.ts';
+    createOrOverwriteFile(tree, appComponentPath, appComponentContent);
+}
+
+function addDeclarationToNgModule(options: Schema): Rule {
+  return (host: Tree) => {
+    const modulePath = options.module;
+
+    // Import and include on Providers the PushService
+    const source = readIntoSourceFile(host, modulePath);
+    const servicePath = `${options.path}/app/shared/services/push.service`;
+    const relativePath = buildRelativePath(modulePath, servicePath);
+    const classifiedName = strings.classify(`PushService`);
+    const providerRecorder = host.beginUpdate(modulePath);
+    const providerChanges: any = addProviderToModule(
+        source,
+        modulePath,
+        classifiedName,
+        relativePath);
+
+    for (const change of providerChanges) {
+        if (change instanceof InsertChange) {
+            providerRecorder.insertLeft(change.pos, change.toAdd);
+        }
+    }
+    host.commitUpdate(providerRecorder);
+    return host;
+  };
+}
+
+function applyWebPushOnFront(options: PWAOptions): Rule {
+  return (tree: Tree) => {
+
+    // The app.component.ts is replaced moving the template or created..
+    createAppComponent(tree, options);
+    createPushService(tree, options);
+
     // On AppComponent html
     const addToAppComponentHtml = 
     `
@@ -86,10 +194,9 @@ function applyWebPushOnFront(options: PWAOptions): Rule {
             <button class="button button-danger" (click)="sendNewsletter()">Send</button>
     `;
 
-    console.log(addToAppComponentTs);
-    console.log(addToAppComponentHtml);
-    console.log(tree);
-    console.log(options);
+    const appComponentHtmlPath = getSourceRoot(tree, options) + '/app/app.component.html';
+    /** Appends the given element HTML fragment to the specified HTML file. Before o after */
+    appendHtmlElementToTag(tree, appComponentHtmlPath, addToAppComponentHtml, 'right');
   }
 }
 
@@ -99,76 +206,73 @@ function applyWebPushOnServer(options: PWAOptions): Rule {
       // Add to configuration and api routes on server.js
       const addToServer = 
       `
-      const webpush = require('web-push');
 
-      export let USER_SUBSCRIPTIONS = [];
+const webpush = require('web-push');
 
-      export function addPushSubscriber(req, res) {
-          const sub = req.body;
-          console.log('Received Subscription on the server: ', sub);
-          USER_SUBSCRIPTIONS.push(sub);
-          res.status(200)
-              .json({ message: "Subscription added successfully." });
-      }
+export let USER_SUBSCRIPTIONS = [];
 
-      export function sendNewsletter(req, res) {
+export function addPushSubscriber(req, res) {
+    const sub = req.body;
+    console.log('Received Subscription on the server: ', sub);
+    USER_SUBSCRIPTIONS.push(sub);
+    res.status(200)
+        .json({ message: "Subscription added successfully." });
+}
 
-          console.log('Total subscriptions', USER_SUBSCRIPTIONS.length);
+export function sendNewsletter(req, res) {
 
-          // sample notification payload
-          const notificationPayload = {
-              "notification": {
-                  "title": "Angular News",
-                  "body": "Newsletter Available!",
-                  "icon": "assets/icons/icon-96x96.png",
-                  "vibrate": [100, 50, 100],
-                  "data": {
-                      "dateOfArrival": Date.now(),
-                      "primaryKey": 1
-                  },
-                  "actions": [{
-                      "action": "explore",
-                      "title": "Go to the site"
-                  }]
-              }
-          };
+    console.log('Total subscriptions', USER_SUBSCRIPTIONS.length);
 
-          Promise.all(USER_SUBSCRIPTIONS.map(sub => webpush.sendNotification(
-              sub, JSON.stringify(notificationPayload) )))
-              .then(() => res.status(200).json({message: 'Newsletter sent successfully.'}))
-              .catch(err => {
-                  console.error("Error sending notification, reason: ", err);
-                  res.sendStatus(500);
-              });
-      }
+    // sample notification payload
+    const notificationPayload = {
+        "notification": {
+            "title": "Angular News",
+            "body": "Newsletter Available!",
+            "icon": "assets/icons/icon-96x96.png",
+            "vibrate": [100, 50, 100],
+            "data": {
+                "dateOfArrival": Date.now(),
+                "primaryKey": 1
+            },
+            "actions": [{
+                "action": "explore",
+                "title": "Go to the site"
+            }]
+        }
+    };
 
-      const vapidKeys = {
-          "publicKey":"BLnVk1MBGFBW4UxL44fuoM2xxQ4o9CuxocVzKn9UVmnXZEyPCTEFjI4sALMB8qN5ee67yZ6MeQWjd5iyS8lINAg",
-          "privateKey":"mp5xYHWtRTyCA63nZMvmJ_qmYO6A1klSotcoppSx-MI"
-      };
+    Promise.all(USER_SUBSCRIPTIONS.map(sub => webpush.sendNotification(
+        sub, JSON.stringify(notificationPayload) )))
+        .then(() => res.status(200).json({message: 'Newsletter sent successfully.'}))
+        .catch(err => {
+            console.error("Error sending notification, reason: ", err);
+            res.sendStatus(500);
+        });
+}
 
-      webpush.setVapidDetails(
-          'mailto:example@yourdomain.org',
-          vapidKeys.publicKey,
-          vapidKeys.privateKey
-      );
+const vapidKeys = {
+    "publicKey":"BLnVk1MBGFBW4UxL44fuoM2xxQ4o9CuxocVzKn9UVmnXZEyPCTEFjI4sALMB8qN5ee67yZ6MeQWjd5iyS8lINAg",
+    "privateKey":"mp5xYHWtRTyCA63nZMvmJ_qmYO6A1klSotcoppSx-MI"
+};
 
+webpush.setVapidDetails(
+    'mailto:example@yourdomain.org',
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
+);
 
-      [...]
+// REST API
+app.route('/api/notifications')
+    .post(addPushSubscriber);
 
-      // REST API
-      app.route('/api/notifications')
-          .post(addPushSubscriber);
-
-      app.route('/api/newsletter')
-          .post(sendNewsletter);
+app.route('/api/newsletter')
+    .post(sendNewsletter);
 
       `;
 
-      if (addToServer) {
-        console.log('...');
-      }
-
+      const appComponentPath = '/source.js';
+      const appComponent = getFileContent(tree, appComponentPath);
+		  createOrOverwriteFile(tree, appComponentPath, appComponent.replace(`const app = express();`, `const app = express();` + addToServer));
 
       // add web-push dependency to package.json
       addDependencyToPackageJson(tree, options, {
@@ -256,6 +360,34 @@ export function schematicsPWA(options: PWAOptions): Rule {
       throw new SchematicsException(`Project is not defined in this workspace.`);
     }
     options.clientProject = options.project;
+
+    if (options.path === undefined) {
+      options.path = buildDefaultPath(project);
+    }
+    options.module = findModule(host, options.path, 'app' + MODULE_EXT, ROUTING_MODULE_EXT);
+    
+    options.name = '';
+    const parsedPath = parseName(options.path!, options.name);
+    options.name = parsedPath.name;
+    options.path = parsedPath.path;
+
+    /*// Object that will be used as context for the EJS templates.
+    const baseTemplateContext = {
+      ...strings,
+      ...options,
+    };
+
+    const templateSource = apply(url('./files'), [
+      template(baseTemplateContext),
+      move(null as any, parsedPath.path),
+      forEach((fileEntry: FileEntry) => {
+        if (host.exists(fileEntry.path)) {
+          host.overwrite(fileEntry.path, fileEntry.content);
+        }
+        return fileEntry;
+      })
+    ]);*/
+
     return chain([
       branchAndMerge(chain([
         applyPWA(options),
@@ -263,6 +395,8 @@ export function schematicsPWA(options: PWAOptions): Rule {
         (options.appShell) ?  applyPackageJsonScripts() : noop(),
         (options.webPush) ?  applyWebPushOnServer(options) : noop(),
         (options.webPush) ?  applyWebPushOnFront(options) : noop(),
+        (options.webPush) ?  addDeclarationToNgModule(options) : noop(),
+        // (options.webPush) ?  mergeWith(templateSource) : noop()
       ])),
     ])(host, context);
   };
