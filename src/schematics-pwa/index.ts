@@ -290,19 +290,19 @@ function applyAppShell(options: PWAOptions): Rule {
 			}
 		}
 		if (!hasPWABuild) {
-      // Check if is Universal installed
-      if (hasUniversalBuild(tree, options)) {
-        const appShellOptions = {
-            clientProject: options.clientProject,
-            universalProject: options.clientProject + '-universal',
-        };
-        // TODO search how run a ng generate command...
-        // 'ng', ['generate', '@schematics/angular:appShell', '--clientProject', this.answers.appname, '--universalProject', this.answers.appname + '-universal']
-        return externalSchematic('@schematics/angular', 'appShell', appShellOptions);
-      } else {
-            console.log(`For App-Shell feature is necessary to be installed Angular Universal.`);
-			return noop();
-      }
+            // Check if is Universal installed
+            if (hasUniversalBuild(tree, options)) {
+                const appShellOptions = {
+                    clientProject: options.clientProject,
+                    universalProject: options.clientProject + '-universal',
+                };
+                // TODO search how run a ng generate command...
+                // 'ng', ['generate', '@schematics/angular:appShell', '--clientProject', this.answers.appname, '--universalProject', this.answers.appname + '-universal']
+                return externalSchematic('@schematics/angular', 'appShell', appShellOptions);
+            } else {
+                    console.log(`For App-Shell feature is necessary to be installed Angular Universal.`);
+                    return noop();
+            }
 		} else {
             console.log(`A App Shell installation exist.`);
 			return noop();
@@ -317,7 +317,7 @@ function applyPWA(options: PWAOptions): Rule {
         if (!hasPWABuild) {
             // If a ngsw-config file don't exist continue installation of pwa schematic
             const pwaOptions = {
-                clientProject: options.clientProject 
+                project: options.clientProject 
             };
             return externalSchematic('@angular/pwa', 'ng-add', pwaOptions);
         } else {

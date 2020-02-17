@@ -1,6 +1,6 @@
 {
   "name": "schematics-pwa",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "CAP Schematics PWA",
   "scripts": {
     "build": "tsc -p tsconfig.json",
